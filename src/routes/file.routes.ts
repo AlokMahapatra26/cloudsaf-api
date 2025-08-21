@@ -123,7 +123,97 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     res.status(201).json(dbData);
 });
 
+// Endpoint to DELETE a file or folder
+router.delete('/:id', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const token = req.token;
+    // @ts-ignore
+    const user = req.user;
+    const { id } = req.params;
 
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
 
+    const { data: item, error: selectError } = await supabase
+        .from('files')
+        .select('type, storage_path')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .single();
+
+    if (selectError) return res.status(404).json({ error: "Item not found or you don't have access." });
+
+    if (item.type === 'file' && item.storage_path) {
+        const { error: storageError } = await supabase.storage
+            .from('files_bucket')
+            .remove([item.storage_path]);
+        
+        if (storageError) return res.status(400).json({ error: `Could not delete file from storage: ${storageError.message}` });
+    }
+    
+    const { error: dbError } = await supabase.from('files').delete().eq('id', id);
+
+    if (dbError) return res.status(400).json({ error: dbError.message });
+
+    res.status(200).json({ message: 'Item deleted successfully.' });
+});
+
+// Endpoint to RENAME a file or folder
+router.patch('/:id/rename', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const token = req.token;
+    const { id } = req.params;
+    const { newName } = req.body;
+
+    if (!newName) return res.status(400).json({ error: 'New name is required.' });
+
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data, error } = await supabase
+        .from('files')
+        .update({ name: newName })
+        .eq('id', id)
+        .select()
+        .single();
+    
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.status(200).json(data);
+});
+
+// Endpoint to get a DOWNLOAD URL for a file
+router.get('/:id/download', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const token = req.token;
+    // @ts-ignore
+    const user = req.user;
+    const { id } = req.params;
+
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data: item, error: selectError } = await supabase
+        .from('files')
+        .select('storage_path')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .single();
+    
+    if (selectError || !item || !item.storage_path) {
+        return res.status(404).json({ error: "File not found or you don't have access." });
+    }
+
+    const { data, error: urlError } = await supabase.storage
+        .from('files_bucket')
+        .createSignedUrl(item.storage_path, 60); // URL is valid for 60 seconds
+
+    if (urlError) return res.status(400).json({ error: urlError.message });
+
+    res.status(200).json({ downloadUrl: data.signedUrl });
+});
 
 export default router;
