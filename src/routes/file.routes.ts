@@ -188,32 +188,119 @@ router.patch('/:id/rename', async (req: Request, res: Response) => {
 router.get('/:id/download', async (req: Request, res: Response) => {
     // @ts-ignore
     const token = req.token;
-    // @ts-ignore
-    const user = req.user;
     const { id } = req.params;
 
+    // This client needs to have the user's token to know who is asking
     const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
         global: { headers: { Authorization: `Bearer ${token}` } },
     });
 
-    const { data: item, error: selectError } = await supabase
-        .from('files')
-        .select('storage_path')
-        .eq('id', id)
-        .eq('user_id', user.id)
-        .single();
-    
-    if (selectError || !item || !item.storage_path) {
+    // 1. Call our new function to get the storage path directly.
+    //    All permission checks happen inside the function itself.
+    const { data: storagePath, error: rpcError } = await supabase
+        .rpc('get_file_path_if_allowed', { file_id_to_check: id });
+
+    if (rpcError || !storagePath) {
+        // This single check handles both "not found" and "no permission" cases.
         return res.status(404).json({ error: "File not found or you don't have access." });
     }
 
+    // 2. If we got a path, create the signed URL.
     const { data, error: urlError } = await supabase.storage
         .from('files_bucket')
-        .createSignedUrl(item.storage_path, 60); // URL is valid for 60 seconds
+        .createSignedUrl(storagePath, 60); // URL is valid for 60 seconds
 
-    if (urlError) return res.status(400).json({ error: urlError.message });
+    if (urlError) {
+        return res.status(400).json({ error: urlError.message });
+    }
 
     res.status(200).json({ downloadUrl: data.signedUrl });
+});
+
+
+// Endpoint to SHARE a file (RPC VERSION - FINAL)
+router.post('/:id/share', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const token = req.token;
+    // @ts-ignore
+    const sharerUser = req.user;
+    const { id: fileId } = req.params;
+    const { email: recipientEmail } = req.body;
+
+    if (!recipientEmail) {
+        return res.status(400).json({ error: 'Recipient email is required.' });
+    }
+    
+    // Admin client is needed to call the SECURITY DEFINER function
+    const supabaseAdmin = createClient(
+        process.env.SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    // Call the database function to securely get the recipient's user ID
+    const { data: recipientUserId, error: rpcError } = await supabaseAdmin
+        .rpc('get_user_id_by_email', {
+            user_email: recipientEmail
+        });
+        
+    if (rpcError || !recipientUserId) {
+        return res.status(404).json({ error: 'Recipient user not found.' });
+    }
+    
+    if (recipientUserId === sharerUser.id) {
+        return res.status(400).json({ error: "You cannot share a file with yourself." });
+    }
+
+    // Create a client instance with the user's token to respect RLS policies
+    const supabaseUserClient = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data, error: shareError } = await supabaseUserClient
+        .from('shares')
+        .insert({
+            file_id: fileId,
+            shared_by_user_id: sharerUser.id,
+            shared_with_user_id: recipientUserId,
+        })
+        .select()
+        .single();
+
+    if (shareError) {
+        if (shareError.code === '23505') {
+            return res.status(409).json({ error: 'This file is already shared with that user.' });
+        }
+        return res.status(400).json({ error: shareError.message });
+    }
+    
+    res.status(201).json(data);
+});
+
+
+// FINAL FIX: Endpoint to get files SHARED WITH the current user
+router.get('/shared-with-me', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const user = req.user;
+    // @ts-ignore
+    const token = req.token;
+
+    // ✅ CORRECTED: Re-add the creation of the supabase client instance
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    
+    // Now, use user.id in the query
+    const { data, error } = await supabase
+        .from('shares')
+        .select('files (*)')
+        .eq('shared_with_user_id', user.id); // Use user.id instead of supabase.auth.uid()
+
+    if (error) {
+        return res.status(400).json({ error: error.message });
+    }
+
+    const sharedFiles = data.map(item => item.files).filter(Boolean);
+    res.status(200).json(sharedFiles);
 });
 
 export default router;

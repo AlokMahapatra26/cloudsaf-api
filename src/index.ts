@@ -13,6 +13,7 @@ app.use(express.json()); // Parse JSON bodies
 
 // Routes
 app.use('/api/auth', authRouter);
+app.get('/api/files/shared-with-me', authMiddleware, filesRouter);
 app.use('/api/files' , authMiddleware , filesRouter)
 
 app.get("/" , (req,res)=>{
