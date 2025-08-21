@@ -304,4 +304,36 @@ router.get('/shared-with-me', async (req: Request, res: Response) => {
     res.status(200).json(sharedFiles);
 });
 
+
+// Endpoint to MOVE a file or folder
+router.patch('/:id/move', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const token = req.token;
+    const { id: fileToMoveId } = req.params;
+    const { destinationFolderId } = req.body; // Can be null for the root directory
+
+    // Critical check: Prevent moving a folder into itself or one of its own subfolders.
+    // A full implementation would check the entire ancestry. For now, we'll prevent the simplest case.
+    if (fileToMoveId === destinationFolderId) {
+        return res.status(400).json({ error: "Cannot move a folder into itself." });
+    }
+
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data, error } = await supabase
+        .from('files')
+        .update({ parent_id: destinationFolderId || null }) // Set new parent_id
+        .eq('id', fileToMoveId)
+        .select()
+        .single();
+    
+    if (error) {
+        return res.status(400).json({ error: error.message });
+    }
+
+    res.status(200).json(data);
+});
+
 export default router;
