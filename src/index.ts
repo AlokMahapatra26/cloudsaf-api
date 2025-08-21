@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import authRouter from "./routes/authRoutes"
+import authRouter from "./routes/auth.routes"
+import filesRouter from "./routes/file.routes"
+import { authMiddleware } from './middleware/auth.middleware';
 
 const app = express();
 const port = 8000; // Port for our backend server
@@ -11,6 +13,7 @@ app.use(express.json()); // Parse JSON bodies
 
 // Routes
 app.use('/api/auth', authRouter);
+app.use('/api/files' , authMiddleware , filesRouter)
 
 app.get("/" , (req,res)=>{
       res.send("Server is working!");
