@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import authRouter from "./routes/auth.routes"
 import filesRouter from "./routes/file.routes"
+import sharesRouter from "./routes/shares.routes";
 import { authMiddleware } from './middleware/auth.middleware';
 
 const app = express();
@@ -15,6 +16,7 @@ app.use(express.json()); // Parse JSON bodies
 app.use('/api/auth', authRouter);
 app.get('/api/files/shared-with-me', authMiddleware, filesRouter);
 app.use('/api/files' , authMiddleware , filesRouter)
+app.use('/api/shares' , authMiddleware , sharesRouter)
 
 app.get("/" , (req,res)=>{
       res.send("Server is working!");
