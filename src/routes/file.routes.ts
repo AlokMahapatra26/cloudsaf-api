@@ -73,6 +73,61 @@ router.post('/folder', async (req: Request, res: Response) => {
     res.status(201).json(data);
 });
 
+//  Endpoint to get files SHARED WITH the current user
+router.get('/shared-with-me', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const user = req.user;
+    // @ts-ignore
+    const token = req.token;
+
+    // ✅ CORRECTED: Re-add the creation of the supabase client instance
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    
+    // Now, use user.id in the query
+    const { data, error } = await supabase
+        .from('shares')
+        .select('files (*)')
+        .eq('shared_with_user_id', user.id); // Use user.id instead of supabase.auth.uid()
+
+    if (error) {
+        return res.status(400).json({ error: error.message });
+    }
+
+    const sharedFiles = data.map(item => item.files).filter(Boolean);
+    res.status(200).json(sharedFiles);
+});
+
+// Endpoint to SEARCH files by name 
+router.get('/search', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const token = req.token;
+    // @ts-ignore
+    const user = req.user;
+    const { query } = req.query;
+
+    if (!query) {
+        return res.status(400).json({ error: 'Search query is required.' });
+    }
+
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data, error } = await supabase
+        .from('files')
+        .select('*')
+        .eq('user_id', user.id)
+        .ilike('name', `%${query}%`); // ✅ Use ilike for case-insensitive search
+
+    if (error) {
+        return res.status(400).json({ error: error.message });
+    }
+
+    res.status(200).json(data);
+});
+
 // Endpoint for file upload
 router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
     // @ts-ignore
@@ -278,33 +333,6 @@ router.post('/:id/share', async (req: Request, res: Response) => {
 });
 
 
-// FINAL FIX: Endpoint to get files SHARED WITH the current user
-router.get('/shared-with-me', async (req: Request, res: Response) => {
-    // @ts-ignore
-    const user = req.user;
-    // @ts-ignore
-    const token = req.token;
-
-    // ✅ CORRECTED: Re-add the creation of the supabase client instance
-    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-        global: { headers: { Authorization: `Bearer ${token}` } },
-    });
-    
-    // Now, use user.id in the query
-    const { data, error } = await supabase
-        .from('shares')
-        .select('files (*)')
-        .eq('shared_with_user_id', user.id); // Use user.id instead of supabase.auth.uid()
-
-    if (error) {
-        return res.status(400).json({ error: error.message });
-    }
-
-    const sharedFiles = data.map(item => item.files).filter(Boolean);
-    res.status(200).json(sharedFiles);
-});
-
-
 // Endpoint to MOVE a file or folder
 router.patch('/:id/move', async (req: Request, res: Response) => {
     // @ts-ignore
@@ -335,5 +363,6 @@ router.patch('/:id/move', async (req: Request, res: Response) => {
 
     res.status(200).json(data);
 });
+
 
 export default router;
