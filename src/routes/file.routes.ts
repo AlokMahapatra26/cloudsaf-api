@@ -112,6 +112,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
             user_id: user.id,
             parent_id: parent_id,
             storage_path: filePath,
+            mimetype: file.mimetype,
         })
         .select()
         .single();
