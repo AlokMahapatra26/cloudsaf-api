@@ -5,6 +5,11 @@ import multer from 'multer';
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+const PLAN_LIMITS = {
+    free: 1 * 1024 * 1024, // 50 MB
+    pro: 5 * 1024 * 1024, // 200 MB
+};
+
 const createSupabaseClient = (req: Request) => {
     // @ts-ignore
     const token = req.token;
@@ -151,8 +156,6 @@ router.get('/search', async (req: Request, res: Response) => {
     res.status(200).json(data);
 });
 
-// Endpoint for file upload
-// server/src/routes/files.routes.ts
 
 // server/src/routes/files.routes.ts
 
@@ -166,48 +169,42 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
         global: { headers: { Authorization: `Bearer ${token}` } },
     });
 
-    if (!req.file) {
-        return res.status(400).json({ error: 'No file was uploaded.' });
-    }
-
+    if (!req.file) return res.status(400).json({ error: 'No file was uploaded.' });
     const file = req.file;
+
+    // 1. Get user's plan
+    const { data: profile } = await supabase
+        .from('profiles').select('plan').eq('id', user.id).single();
+    const userPlan = (profile?.plan as 'free' | 'pro') || 'free';
+    const planLimit = PLAN_LIMITS[userPlan];
+
+    // 2. Calculate the total usage using the corrected query
+    const { data: files, error: filesError } = await supabase
+        .from('files').select('size').eq('user_id', user.id).eq('is_trashed', false);
+    if (filesError) return res.status(400).json({ error: filesError.message });
+    const totalUsage = files ? files.reduce((sum, file) => sum + (file.size ?? 0), 0) : 0;
+
+    // 3. Check if the new file exceeds the limit
+    if (totalUsage + file.size > planLimit) {
+        return res.status(403).json({ error: 'Storage limit exceeded. Upgrade to Pro for more space.' });
+    }
+    
+    // If check passes, proceed with upload
     const parent_id = req.body.parent_id || null;
     const fileSize = file.size || 0;
-    
-    // ✅ FINAL DEBUGGING STEP:
-    console.log(`--- FINAL UPLOAD TEST ---`);
-    console.log(`Attempting to save file with size: ${fileSize}`);
-    console.log(`The data type of fileSize is: ${typeof fileSize}`);
-    console.log(`-------------------------`);
-
     const filePath = `${user.id}/${Date.now()}_${file.originalname}`;
     const { error: uploadError } = await supabase.storage
-        .from('files_bucket')
-        .upload(filePath, file.buffer, { contentType: file.mimetype });
+        .from('files_bucket').upload(filePath, file.buffer, { contentType: file.mimetype });
 
-    if (uploadError) {
-        return res.status(400).json({ error: `Storage Error: ${uploadError.message}` });
-    }
+    if (uploadError) return res.status(400).json({ error: `Storage Error: ${uploadError.message}` });
 
     const { data: dbData, error: dbError } = await supabase
-        .from('files')
-        .insert({
-            name: file.originalname,
-            type: 'file',
-            user_id: user.id,
-            parent_id: parent_id,
-            storage_path: filePath,
-            mimetype: file.mimetype,
-            size: fileSize,
-        })
-        .select()
-        .single();
-
+        .from('files').insert({ name: file.originalname, type: 'file', user_id: user.id, parent_id: parent_id, storage_path: filePath, mimetype: file.mimetype, size: fileSize })
+        .select().single();
     if (dbError) {
         console.error('Database insert error:', dbError);
         return res.status(400).json({ error: `Database Error: ${dbError.message}` });
     }
-
     res.status(201).json(dbData);
 });
 
