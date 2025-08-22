@@ -3,6 +3,7 @@ import cors from 'cors';
 import authRouter from "./routes/auth.routes"
 import filesRouter from "./routes/file.routes"
 import sharesRouter from "./routes/shares.routes";
+import userRouter from './routes/user.routes';
 import { authMiddleware } from './middleware/auth.middleware';
 
 const app = express();
@@ -17,6 +18,7 @@ app.use('/api/auth', authRouter);
 app.get('/api/files/shared-with-me', authMiddleware, filesRouter);
 app.use('/api/files' , authMiddleware , filesRouter)
 app.use('/api/shares' , authMiddleware , sharesRouter)
+app.use('/api/user' , authMiddleware , userRouter)
 
 app.get("/" , (req,res)=>{
       res.send("Server is working!");

@@ -104,7 +104,6 @@ router.get('/shared-with-me', async (req: Request, res: Response) => {
     // @ts-ignore
     const token = req.token;
 
-    // ✅ CORRECTED: Re-add the creation of the supabase client instance
     const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
         global: { headers: { Authorization: `Bearer ${token}` } },
     });
@@ -143,7 +142,7 @@ router.get('/search', async (req: Request, res: Response) => {
         .from('files')
         .select('*')
         .eq('user_id', user.id)
-        .ilike('name', `%${query}%`); // ✅ Use ilike for case-insensitive search
+        .ilike('name', `%${query}%`);
 
     if (error) {
         return res.status(400).json({ error: error.message });
@@ -153,12 +152,16 @@ router.get('/search', async (req: Request, res: Response) => {
 });
 
 // Endpoint for file upload
+// server/src/routes/files.routes.ts
+
+// server/src/routes/files.routes.ts
+
 router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
     // @ts-ignore
     const token = req.token;
     // @ts-ignore
     const user = req.user;
-
+    
     const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
         global: { headers: { Authorization: `Bearer ${token}` } },
     });
@@ -169,20 +172,23 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 
     const file = req.file;
     const parent_id = req.body.parent_id || null;
+    const fileSize = file.size || 0;
+    
+    // ✅ FINAL DEBUGGING STEP:
+    console.log(`--- FINAL UPLOAD TEST ---`);
+    console.log(`Attempting to save file with size: ${fileSize}`);
+    console.log(`The data type of fileSize is: ${typeof fileSize}`);
+    console.log(`-------------------------`);
 
-    // 1. Upload the actual file to Supabase Storage
     const filePath = `${user.id}/${Date.now()}_${file.originalname}`;
     const { error: uploadError } = await supabase.storage
         .from('files_bucket')
-        .upload(filePath, file.buffer, {
-            contentType: file.mimetype,
-        });
+        .upload(filePath, file.buffer, { contentType: file.mimetype });
 
     if (uploadError) {
         return res.status(400).json({ error: `Storage Error: ${uploadError.message}` });
     }
 
-    // 2. Create a record of the file in our 'files' database table
     const { data: dbData, error: dbError } = await supabase
         .from('files')
         .insert({
@@ -192,11 +198,13 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
             parent_id: parent_id,
             storage_path: filePath,
             mimetype: file.mimetype,
+            size: fileSize,
         })
         .select()
         .single();
 
     if (dbError) {
+        console.error('Database insert error:', dbError);
         return res.status(400).json({ error: `Database Error: ${dbError.message}` });
     }
 
