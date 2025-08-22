@@ -1,10 +1,20 @@
 import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import multer from 'multer';
-
 // Configure multer for in-memory file storage
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+
+const createSupabaseClient = (req: Request) => {
+    // @ts-ignore
+    const token = req.token;
+    // @ts-ignore
+    const user = req.user;
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    return { supabase, user };
+};
 
 const router = Router();
 
@@ -22,7 +32,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     const parentId = req.query.parentId || null;
 
-    let query = supabase.from('files').select('*').eq('user_id', user.id);
+    let query = supabase.from('files').select('*').eq('user_id', user.id).eq('is_trashed' , false);
 
     if (parentId) {
         query = query.eq('parent_id', parentId);
@@ -35,6 +45,20 @@ router.get('/', async (req: Request, res: Response) => {
     if (error) {
         return res.status(400).json({ error: error.message });
     }
+    res.status(200).json(data);
+});
+
+// Endpoint to get TRASHED files
+router.get('/trashed', async (req: Request, res: Response) => {
+    // @ts-ignore
+    const user = req.user;
+    const { supabase } = createSupabaseClient(req);
+
+    const { data, error } = await supabase.from('files').select('*')
+        .eq('user_id', user.id)
+        .eq('is_trashed', true); // Only get trashed items
+
+    if (error) return res.status(400).json({ error: error.message });
     res.status(200).json(data);
 });
 
@@ -181,39 +205,56 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 
 // Endpoint to DELETE a file or folder
 router.delete('/:id', async (req: Request, res: Response) => {
-    // @ts-ignore
-    const token = req.token;
-    // @ts-ignore
-    const user = req.user;
     const { id } = req.params;
+    const { supabase } = createSupabaseClient(req);
 
-    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-        global: { headers: { Authorization: `Bearer ${token}` } },
-    });
-
-    const { data: item, error: selectError } = await supabase
-        .from('files')
-        .select('type, storage_path')
+    const { data, error } = await supabase.from('files')
+        .update({ is_trashed: true, parent_id: null }) // Move to trash and remove from parent folder
         .eq('id', id)
-        .eq('user_id', user.id)
-        .single();
+        .select();
+    
+    if (error) return res.status(400).json({ error: error.message });
+    res.status(200).json(data);
+});
 
-    if (selectError) return res.status(404).json({ error: "Item not found or you don't have access." });
+router.post('/:id/restore', async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { supabase } = createSupabaseClient(req);
+    
+    const { data, error } = await supabase.from('files')
+        .update({ is_trashed: false }) // Just mark as not trashed
+        .eq('id', id)
+        .select();
 
+    if (error) return res.status(400).json({ error: error.message });
+    res.status(200).json(data);
+});
+
+// NEW: Endpoint to PERMANENTLY DELETE a file
+router.delete('/:id/permanent', async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { supabase} = createSupabaseClient(req);
+
+    // First, get the file's storage path
+    const { data: item, error: selectError } = await supabase
+        .from('files').select('storage_path, type').eq('id', id).single();
+
+    if (selectError) return res.status(404).json({ error: "Item not found." });
+
+    // If it's a file, delete it from Storage
     if (item.type === 'file' && item.storage_path) {
         const { error: storageError } = await supabase.storage
-            .from('files_bucket')
-            .remove([item.storage_path]);
-        
-        if (storageError) return res.status(400).json({ error: `Could not delete file from storage: ${storageError.message}` });
+            .from('files_bucket').remove([item.storage_path]);
+        if (storageError) console.error("Storage delete error:", storageError.message);
     }
-    
-    const { error: dbError } = await supabase.from('files').delete().eq('id', id);
 
+    // Finally, delete the record from the database
+    const { error: dbError } = await supabase.from('files').delete().eq('id', id);
     if (dbError) return res.status(400).json({ error: dbError.message });
 
-    res.status(200).json({ message: 'Item deleted successfully.' });
+    res.status(200).json({ message: 'Item permanently deleted.' });
 });
+
 
 // Endpoint to RENAME a file or folder
 router.patch('/:id/rename', async (req: Request, res: Response) => {
@@ -365,4 +406,6 @@ router.patch('/:id/move', async (req: Request, res: Response) => {
 });
 
 
+
 export default router;
+
