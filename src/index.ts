@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import authRouter from "./routes/auth.routes"
-import filesRouter from "./routes/file.routes"
+import filesRouter from "./routes/files.routes"
 import sharesRouter from "./routes/shares.routes";
 import userRouter from './routes/user.routes';
 import { authMiddleware } from './middleware/auth.middleware';
