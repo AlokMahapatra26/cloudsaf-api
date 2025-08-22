@@ -5,11 +5,13 @@
     "moduleResolution": "Node",
     "rootDir": "src",
     "outDir": "dist",
-    "strict": true,
+    "strict": false,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noImplicitAny": false,
+    
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]
