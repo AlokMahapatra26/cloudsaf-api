@@ -11,7 +11,7 @@ const port = 8000; // Port for our backend server
 
 // Middlewares
 app.use(cors({
-  origin: ["http://localhost:3000", "https://myfrontend.com"],
+  origin: ["http://localhost:3000", "https://myfrontend.com" , "https://cloudsaf-client.vercel.app"],
   credentials: true,
 })); // Enable Cross-Origin Resource Sharing
 app.use(express.json()); // Parse JSON bodies
