@@ -6,8 +6,8 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 const PLAN_LIMITS = {
-    free: 1 * 1024 * 1024, // 50 MB
-    pro: 5 * 1024 * 1024, // 200 MB
+    free: 10 * 1024 * 1024, // 50 MB
+    pro: 50 * 1024 * 1024, // 200 MB
 };
 
 const createSupabaseClient = (req: Request) => {
