@@ -5,8 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 
 // Define our plan limits in MB as constants
 const PLAN_LIMITS = {
-    free: 10 * 1024 * 1024, // 50 MB
-    pro: 50 * 1024 * 1024, // 200 MB
+    free: 20 * 1024 * 1024, // 20 MB
+    pro: 200 * 1024 * 1024, // 200 MB
 };
 
 // Helper function to create a Supabase client with the user's token

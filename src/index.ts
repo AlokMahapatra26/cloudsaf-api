@@ -16,6 +16,16 @@ app.use(cors({
 })); // Enable Cross-Origin Resource Sharing
 app.use(express.json()); // Parse JSON bodies
 
+let requestCount = 0;
+
+// middleware to count every request
+app.use((req, res, next) => {
+  requestCount++;
+  console.log(`Request #${requestCount}: ${req.method} ${req.url}`);
+  next();
+});
+
+
 // Routes
 app.use('/api/auth', authRouter);
 app.get('/api/files/shared-with-me', authMiddleware, filesRouter);
@@ -23,9 +33,11 @@ app.use('/api/files' , authMiddleware , filesRouter)
 app.use('/api/shares' , authMiddleware , sharesRouter)
 app.use('/api/user' , authMiddleware , userRouter)
 
-app.get("/" , (req,res)=>{
-      res.send("Server is working!");
-})
+// your routes
+app.get("/", (req, res) => {
+  res.send(`Hello! This server has received ${requestCount} requests so far.`);
+});
+
 
 app.listen(port, () => {
     console.log(`Server is running at http://localhost:${port}`);
